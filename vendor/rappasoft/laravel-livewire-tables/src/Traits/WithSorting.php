@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\Relation;
  */
 trait WithSorting
 {
+    public bool $sortingEnabled = true;
     public bool $showSorting = true;
     public bool $singleColumnSorting = false;
     public array $sorts = [];
@@ -20,6 +21,10 @@ trait WithSorting
 
     public function sortBy(string $field): ?string
     {
+        if (! $this->sortingEnabled) {
+            return null;
+        }
+
         if ($this->singleColumnSorting && count($this->sorts) && ! isset($this->sorts[$field])) {
             $this->sorts = [];
         }
@@ -49,7 +54,17 @@ trait WithSorting
         }
 
         foreach ($this->sorts as $field => $direction) {
-            if (optional($this->getColumn($field))->hasSortCallback()) {
+            if (! in_array($direction, ['asc', 'desc'])) {
+                $direction = 'desc';
+            }
+
+            $column = $this->getColumn($field);
+
+            if (is_null($column)) {
+                continue;
+            }
+
+            if ($column->hasSortCallback()) {
                 $query = app()->call($this->getColumn($field)->getSortCallback(), ['query' => $query, 'direction' => $direction]);
             } else {
                 $query->orderBy($field, $direction);

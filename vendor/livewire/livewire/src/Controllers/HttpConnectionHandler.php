@@ -64,13 +64,16 @@ class HttpConnectionHandler extends ConnectionHandler
     {
         $request = Request::create($url, $method);
 
-        if ($session = request()->getSession()) {
-            $request->setLaravelSession($session);
+        if (request()->hasSession()) {
+            $request->setLaravelSession(request()->session());
         }
 
         $request->setUserResolver(request()->getUserResolver());
 
         $route = app('router')->getRoutes()->match($request);
+
+        // For some reason without this octane breaks the route parameter binding.
+        $route->setContainer(app());
 
         $request->setRouteResolver(function () use ($route) {
             return $route;

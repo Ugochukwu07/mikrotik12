@@ -20,33 +20,35 @@ trait WithPerPagePagination
             $this->perPageAccepted[] = -1;
         }
 
-        if (in_array(session()->get($this->tableName.'-perPage', $this->perPage), $this->perPageAccepted, true)) {
-            $this->perPage = session()->get($this->tableName.'-perPage', $this->perPage);
+        if (in_array(session()->get($this->getPerPagePaginationSessionKey(), $this->perPage), $this->perPageAccepted, true)) {
+            $this->perPage = session()->get($this->getPerPagePaginationSessionKey(), $this->perPage);
         } else {
             $this->perPage = $this->perPageAccepted[0] ?? 10;
         }
     }
 
-    /**
-     * @param $value
-     */
     public function updatedPerPage($value): void
     {
-        if (in_array(session()->get($this->tableName.'-perPage', $this->perPage), $this->perPageAccepted, true)) {
-            session()->put($this->tableName.'-perPage', (int) $value);
-        } else {
-            session()->put($this->tableName.'-perPage', $this->perPageAccepted[0] ?? 10);
+        if (! in_array($value, $this->perPageAccepted, false)) {
+            $value = $this->perPage = $this->perPageAccepted[0] ?? 10;
         }
 
-        $this->resetPage();
+        if (in_array(session()->get($this->getPerPagePaginationSessionKey(), $this->perPage), $this->perPageAccepted, true)) {
+            session()->put($this->getPerPagePaginationSessionKey(), (int) $value);
+        } else {
+            session()->put($this->getPerPagePaginationSessionKey(), $this->perPageAccepted[0] ?? 10);
+        }
+
+        $this->resetPage($this->pageName());
     }
 
-    /**
-     * @param $query
-     * @return mixed
-     */
     public function applyPagination($query)
     {
         return $query->paginate($this->perPage === -1 ? $query->count() : $this->perPage, ['*'], $this->pageName());
+    }
+
+    private function getPerPagePaginationSessionKey(): string
+    {
+        return $this->tableName.'-perPage';
     }
 }

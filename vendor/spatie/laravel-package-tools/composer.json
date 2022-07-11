@@ -16,18 +16,17 @@
     ],
     "require": {
         "php": "^7.4|^8.0",
-        "illuminate/contracts": "^7.0|^8.0",
-        "mockery/mockery": "^1.4"
+        "illuminate/contracts": "^7.0|^8.0|^9.0"
     },
     "require-dev": {
-        "orchestra/testbench": "^5.0|^6.0",
-        "phpunit/phpunit": "^9.3",
-        "spatie/test-time": "^1.2"
+        "orchestra/testbench": "^5.0|^6.23|^7.0",
+        "phpunit/phpunit": "^9.4",
+        "spatie/test-time": "^1.2",
+        "mockery/mockery": "^1.4"
     },
     "autoload": {
         "psr-4": {
-            "Spatie\\LaravelPackageTools\\": "src",
-            "Spatie\\LaravelPackageTools\\Database\\Factories\\": "database/factories"
+            "Spatie\\LaravelPackageTools\\": "src"
         }
     },
     "autoload-dev": {

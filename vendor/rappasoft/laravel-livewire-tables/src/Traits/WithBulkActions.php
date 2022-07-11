@@ -10,14 +10,19 @@ use Illuminate\Database\Eloquent\Relations\Relation;
  */
 trait WithBulkActions
 {
+    public bool $bulkActionsEnabled = true;
     public string $primaryKey = 'id';
     public bool $selectPage = false;
     public bool $selectAll = false;
-    public $selected = [];
-    public array $bulkActions = [];
+    public array $selected = [];
+    public bool $hideBulkActionsOnEmpty = false;
 
     public function renderingWithBulkActions(): void
     {
+        if (! $this->bulkActionsEnabled) {
+            return;
+        }
+
         if ($this->selectAll) {
             $this->selectPageRows();
         }
@@ -43,7 +48,7 @@ trait WithBulkActions
 
     public function selectPageRows(): void
     {
-        $this->selected = $this->rows->pluck($this->primaryKey)->map(fn ($key) => (string) $key);
+        $this->selected = $this->rows->pluck($this->primaryKey)->map(fn ($key) => (string) $key)->toArray();
     }
 
     public function selectAll(): void
@@ -63,8 +68,11 @@ trait WithBulkActions
      */
     public function selectedRowsQuery()
     {
-        return (clone $this->rowsQuery())
-            ->unless($this->selectAll, fn ($query) => $query->whereIn($query->qualifyColumn($this->primaryKey), $this->selected));
+        return $this->query()->when(
+            $this->selectAll,
+            fn ($query) => $this->applySearchFilter($query),
+            fn ($query) => $query->whereIn($query->qualifyColumn($this->primaryKey), $this->selected)
+        );
     }
 
     /**
@@ -77,11 +85,46 @@ trait WithBulkActions
 
     public function selectedKeys(): array
     {
-        return $this->selectedRowsQuery()->pluck($this->rowsQuery()->qualifyColumn($this->primaryKey))->toArray();
+        return $this->selectedRowsQuery()->pluck($this->query()->qualifyColumn($this->primaryKey))->toArray();
     }
 
     public function getSelectedKeysProperty(): array
     {
         return $this->selectedKeys();
+    }
+
+    public function getBulkActionsProperty(): array
+    {
+        return $this->bulkActions();
+    }
+
+    public function bulkActions(): array
+    {
+        if (property_exists($this, 'bulkActions')) {
+            return $this->bulkActions;
+        }
+
+        return [];
+    }
+
+    public function getShowBulkActionsDropdownProperty(): bool
+    {
+        $showBulkActions = false;
+
+        if ($this->bulkActionsEnabled) {
+            if (count($this->bulkActions())) {
+                $showBulkActions = true;
+            }
+
+            if ($this->hideBulkActionsOnEmpty) {
+                if (count($this->selected)) {
+                    $showBulkActions = true;
+                } else {
+                    $showBulkActions = false;
+                }
+            }
+        }
+
+        return $showBulkActions;
     }
 }

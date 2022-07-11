@@ -40,7 +40,7 @@ class SubscriptionBuilder
      *
      * @var array
      */
-    protected $items;
+    protected $items = [];
 
     /**
      * The date and time the trial will expire.
@@ -99,6 +99,8 @@ class SubscriptionBuilder
     {
         $options = is_array($price) ? $price : ['price' => $price];
 
+        $quantity = $price['quantity'] ?? $quantity;
+
         if (! is_null($quantity)) {
             $options['quantity'] = $quantity;
         }
@@ -107,10 +109,10 @@ class SubscriptionBuilder
             $options['tax_rates'] = $taxRates;
         }
 
-        if (is_array($price)) {
-            $this->items[] = $options;
+        if (isset($options['price'])) {
+            $this->items[$options['price']] = $options;
         } else {
-            $this->items[$price] = $options;
+            $this->items[] = $options;
         }
 
         return $this;
@@ -266,6 +268,23 @@ class SubscriptionBuilder
     }
 
     /**
+     * Create a new Stripe subscription and send an invoice to the customer.
+     *
+     * @param  array  $customerOptions
+     * @param  array  $subscriptionOptions
+     * @return \Laravel\Cashier\Subscription
+     *
+     * @throws \Exception
+     * @throws \Laravel\Cashier\Exceptions\IncompletePayment
+     */
+    public function createAndSendInvoice(array $customerOptions = [], array $subscriptionOptions = [])
+    {
+        return $this->create(null, $customerOptions, array_merge($subscriptionOptions, [
+            'collection_method' => 'send_invoice',
+        ]));
+    }
+
+    /**
      * Create the Eloquent Subscription.
      *
      * @param  \Stripe\Subscription  $stripeSubscription
@@ -273,6 +292,10 @@ class SubscriptionBuilder
      */
     protected function createSubscription(StripeSubscription $stripeSubscription)
     {
+        if ($subscription = $this->owner->subscriptions()->where('stripe_id', $stripeSubscription->id)->first()) {
+            return $subscription;
+        }
+
         /** @var \Stripe\SubscriptionItem $firstItem */
         $firstItem = $stripeSubscription->items->first();
         $isSinglePrice = $stripeSubscription->items->count() === 1;
@@ -283,7 +306,7 @@ class SubscriptionBuilder
             'stripe_id' => $stripeSubscription->id,
             'stripe_status' => $stripeSubscription->status,
             'stripe_price' => $isSinglePrice ? $firstItem->price->id : null,
-            'quantity' => $isSinglePrice ? $firstItem->quantity : null,
+            'quantity' => $isSinglePrice ? ($firstItem->quantity ?? null) : null,
             'trial_ends_at' => ! $this->skipTrial ? $this->trialExpires : null,
             'ends_at' => null,
         ]);
@@ -294,7 +317,7 @@ class SubscriptionBuilder
                 'stripe_id' => $item->id,
                 'stripe_product' => $item->price->product,
                 'stripe_price' => $item->price->id,
-                'quantity' => $item->quantity,
+                'quantity' => $item->quantity ?? null,
             ]);
         }
 
@@ -430,5 +453,15 @@ class SubscriptionBuilder
         if ($taxRates = $this->owner->priceTaxRates()) {
             return $taxRates[$price] ?? null;
         }
+    }
+
+    /**
+     * Get the items set on the subscription builder.
+     *
+     * @return array
+     */
+    public function getItems()
+    {
+        return $this->items;
     }
 }

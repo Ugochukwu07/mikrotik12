@@ -13,6 +13,8 @@ class LivewireManager
     protected $componentAliases = [];
     protected $queryParamsForTesting = [];
 
+    protected $shouldDisableBackButtonCache = false;
+
     protected $persistentMiddleware = [
         \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
         \Laravel\Jetstream\Http\Middleware\AuthenticateSession::class,
@@ -25,6 +27,9 @@ class LivewireManager
     ];
 
     public static $isLivewireRequestTestingOverride = false;
+    
+    public static $currentCompilingViewPath;
+    public static $currentCompilingChildCounter;
 
     public function component($alias, $viewClass = null)
     {
@@ -97,6 +102,7 @@ class LivewireManager
         }
 
         return LifecycleManager::fromInitialRequest($name, $id)
+            ->boot()
             ->initialHydrate()
             ->mount($params)
             ->renderToView()
@@ -155,7 +161,7 @@ class LivewireManager
     {
         $debug = config('app.debug');
 
-        $styles = $this->cssAssets();
+        $styles = $this->cssAssets($options);
 
         // HTML Label.
         $html = $debug ? ['<!-- Livewire Styles -->'] : [];
@@ -181,12 +187,18 @@ class LivewireManager
         return implode("\n", $html);
     }
 
-    protected function cssAssets()
+    protected function cssAssets($options = [])
     {
+        $nonce = isset($options['nonce']) ? "nonce=\"{$options['nonce']}\"" : '';
+
         return <<<HTML
-<style>
-    [wire\:loading], [wire\:loading\.delay], [wire\:loading\.inline-block], [wire\:loading\.inline], [wire\:loading\.block], [wire\:loading\.flex], [wire\:loading\.table], [wire\:loading\.grid] {
+<style {$nonce}>
+    [wire\:loading], [wire\:loading\.delay], [wire\:loading\.inline-block], [wire\:loading\.inline], [wire\:loading\.block], [wire\:loading\.flex], [wire\:loading\.table], [wire\:loading\.grid], [wire\:loading\.inline-flex] {
         display: none;
+    }
+
+    [wire\:loading\.delay\.shortest], [wire\:loading\.delay\.shorter], [wire\:loading\.delay\.short], [wire\:loading\.delay\.long], [wire\:loading\.delay\.longer], [wire\:loading\.delay\.longest] {
+        display:none;
     }
 
     [wire\:offline] {
@@ -211,7 +223,11 @@ HTML;
     {
         $jsonEncodedOptions = $options ? json_encode($options) : '';
 
-        $appUrl = config('livewire.asset_url') ?: rtrim($options['asset_url'] ?? '', '/');
+        $assetsUrl = config('livewire.asset_url') ?: rtrim($options['asset_url'] ?? '', '/');
+
+        $appUrl = config('livewire.app_url')
+            ?: rtrim($options['app_url'] ?? '', '/')
+            ?: $assetsUrl;
 
         $jsLivewireToken = app()->has('session.store') ? "'" . csrf_token() . "'" : 'null';
 
@@ -219,7 +235,7 @@ HTML;
         $versionedFileName = $manifest['/livewire.js'];
 
         // Default to dynamic `livewire.js` (served by a Laravel route).
-        $fullAssetPath = "{$appUrl}/livewire{$versionedFileName}";
+        $fullAssetPath = "{$assetsUrl}/livewire{$versionedFileName}";
         $assetWarning = null;
 
         $nonce = isset($options['nonce']) ? "nonce=\"{$options['nonce']}\"" : '';
@@ -229,7 +245,7 @@ HTML;
             $publishedManifest = json_decode(file_get_contents(public_path('vendor/livewire/manifest.json')), true);
             $versionedFileName = $publishedManifest['/livewire.js'];
 
-            $fullAssetPath = ($this->isOnVapor() ? config('app.asset_url') : $appUrl).'/vendor/livewire'.$versionedFileName;
+            $fullAssetPath = ($this->isRunningServerless() ? config('app.asset_url') : $assetsUrl).'/vendor/livewire'.$versionedFileName;
 
             if ($manifest !== $publishedManifest) {
                 $assetWarning = <<<'HTML'
@@ -272,8 +288,8 @@ HTML;
         // because it will be minified in production.
         return <<<HTML
 {$assetWarning}
-<script src="{$fullAssetPath}" data-turbo-eval="false" data-turbolinks-eval="false"></script>
-<script data-turbo-eval="false" data-turbolinks-eval="false"{$nonce}>
+<script src="{$fullAssetPath}" data-turbo-eval="false" data-turbolinks-eval="false" {$nonce}></script>
+<script data-turbo-eval="false" data-turbolinks-eval="false" {$nonce}>
     {$windowLivewireCheck}
 
     window.livewire = new Livewire({$jsonEncodedOptions});
@@ -289,8 +305,22 @@ HTML;
         });
     };
 
+    let started = false;
+
+    window.addEventListener('alpine:initializing', function () {
+        if (! started) {
+            window.livewire.start();
+
+            started = true;
+        }
+    });
+
     document.addEventListener("DOMContentLoaded", function () {
-        window.livewire.start();
+        if (! started) {
+            window.livewire.start();
+
+            started = true;
+        }
     });
 </script>
 HTML;
@@ -342,7 +372,7 @@ HTML;
                 return str(request('fingerprint')['url'])->after(request()->root());
             }
 
-            return request('fingerprint')['path'];
+            return request('fingerprint.path');
         }
 
         return request()->path();
@@ -359,7 +389,7 @@ HTML;
                 return 'GET';
             }
 
-            return request('fingerprint')['method'];
+            return request('fingerprint.method', 'POST');
         }
 
         return request()->method();
@@ -386,7 +416,15 @@ HTML;
 
     public function isOnVapor()
     {
-        return ($_ENV['SERVER_SOFTWARE'] ?? null) === 'vapor';
+        return $this->isRunningServerless();
+    }
+
+    public function isRunningServerless()
+    {
+        return in_array($_ENV['SERVER_SOFTWARE'] ?? null, [
+            'vapor',
+            'bref',
+        ]);
     }
 
     public function withQueryParams($queryParams)
@@ -394,5 +432,39 @@ HTML;
         $this->queryParamsForTesting = $queryParams;
 
         return $this;
+    }
+
+    public function setBackButtonCache()
+    {
+        /**
+         * Reverse this boolean so that the middleware is only applied when it is disabled.
+         */
+        $this->shouldDisableBackButtonCache = ! config('livewire.back_button_cache', false);
+    }
+
+    public function disableBackButtonCache()
+    {
+        $this->shouldDisableBackButtonCache = true;
+    }
+
+    public function enableBackButtonCache()
+    {
+        $this->shouldDisableBackButtonCache = false;
+    }
+
+    public function shouldDisableBackButtonCache()
+    {
+        return $this->shouldDisableBackButtonCache;
+    }
+
+    public function flushState()
+    {
+        static::$isLivewireRequestTestingOverride = false;
+        static::$currentCompilingChildCounter = null;
+        static::$currentCompilingViewPath = null;
+        
+        $this->shouldDisableBackButtonCache = false;
+
+        $this->dispatch('flush-state');
     }
 }

@@ -224,7 +224,7 @@ class Subscription extends Model
      */
     public function active()
     {
-        return (is_null($this->ends_at) || $this->onGracePeriod()) &&
+        return ! $this->ended() &&
             $this->stripe_status !== StripeSubscription::STATUS_INCOMPLETE &&
             $this->stripe_status !== StripeSubscription::STATUS_INCOMPLETE_EXPIRED &&
             (! Cashier::$deactivatePastDue || $this->stripe_status !== StripeSubscription::STATUS_PAST_DUE) &&
@@ -274,7 +274,7 @@ class Subscription extends Model
      */
     public function recurring()
     {
-        return ! $this->onTrial() && ! $this->cancelled();
+        return ! $this->onTrial() && ! $this->canceled();
     }
 
     /**
@@ -285,7 +285,7 @@ class Subscription extends Model
      */
     public function scopeRecurring($query)
     {
-        $query->notOnTrial()->notCancelled();
+        $query->notOnTrial()->notCanceled();
     }
 
     /**
@@ -293,31 +293,69 @@ class Subscription extends Model
      *
      * @return bool
      */
-    public function cancelled()
+    public function canceled()
     {
         return ! is_null($this->ends_at);
     }
 
     /**
-     * Filter query by cancelled.
+     * Determine if the subscription is no longer active.
+     *
+     * @return bool
+     *
+     * @deprecated Use canceled instead.
+     */
+    public function cancelled()
+    {
+        return $this->canceled();
+    }
+
+    /**
+     * Filter query by canceled.
      *
      * @param  \Illuminate\Database\Eloquent\Builder  $query
      * @return void
      */
-    public function scopeCancelled($query)
+    public function scopeCanceled($query)
     {
         $query->whereNotNull('ends_at');
     }
 
     /**
-     * Filter query by not cancelled.
+     * Filter query by canceled.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @return void
+     *
+     * @deprecated Use scopeCanceled instead.
+     */
+    public function scopeCancelled($query)
+    {
+        $this->scopeCanceled($query);
+    }
+
+    /**
+     * Filter query by not canceled.
      *
      * @param  \Illuminate\Database\Eloquent\Builder  $query
      * @return void
      */
-    public function scopeNotCancelled($query)
+    public function scopeNotCanceled($query)
     {
         $query->whereNull('ends_at');
+    }
+
+    /**
+     * Filter query by not canceled.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @return void
+     *
+     * @deprecated Use scopeNotCanceled instead.
+     */
+    public function scopeNotCancelled($query)
+    {
+        $this->scopeNotCanceled($query);
     }
 
     /**
@@ -327,7 +365,7 @@ class Subscription extends Model
      */
     public function ended()
     {
-        return $this->cancelled() && ! $this->onGracePeriod();
+        return $this->canceled() && ! $this->onGracePeriod();
     }
 
     /**
@@ -338,7 +376,7 @@ class Subscription extends Model
      */
     public function scopeEnded($query)
     {
-        $query->cancelled()->notOnGracePeriod();
+        $query->canceled()->notOnGracePeriod();
     }
 
     /**
@@ -360,6 +398,27 @@ class Subscription extends Model
     public function scopeOnTrial($query)
     {
         $query->whereNotNull('trial_ends_at')->where('trial_ends_at', '>', Carbon::now());
+    }
+
+    /**
+     * Determine if the subscription's trial has expired.
+     *
+     * @return bool
+     */
+    public function hasExpiredTrial()
+    {
+        return $this->trial_ends_at && $this->trial_ends_at->isPast();
+    }
+
+    /**
+     * Filter query by expired trial.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @return void
+     */
+    public function scopeExpiredTrial($query)
+    {
+        $query->whereNotNull('trial_ends_at')->where('trial_ends_at', '<', Carbon::now());
     }
 
     /**
@@ -502,7 +561,7 @@ class Subscription extends Model
 
         $this->fill([
             'stripe_status' => $stripeSubscription->status,
-            'quantity' => $quantity,
+            'quantity' => $stripeSubscription->quantity,
         ])->save();
 
         if ($this->hasIncompletePayment()) {
@@ -682,7 +741,7 @@ class Subscription extends Model
         $this->fill([
             'stripe_status' => $stripeSubscription->status,
             'stripe_price' => $isSinglePrice ? $firstItem->price->id : null,
-            'quantity' => $isSinglePrice ? $firstItem->quantity : null,
+            'quantity' => $isSinglePrice ? ($firstItem->quantity ?? null) : null,
             'ends_at' => null,
         ])->save();
 
@@ -692,7 +751,7 @@ class Subscription extends Model
             ], [
                 'stripe_product' => $item->price->product,
                 'stripe_price' => $item->price->id,
-                'quantity' => $item->quantity,
+                'quantity' => $item->quantity ?? null,
             ]);
         }
 
@@ -850,7 +909,7 @@ class Subscription extends Model
             'stripe_id' => $stripeSubscriptionItem->id,
             'stripe_product' => $stripeSubscriptionItem->price->product,
             'stripe_price' => $stripeSubscriptionItem->price->id,
-            'quantity' => $quantity,
+            'quantity' => $stripeSubscriptionItem->quantity ?? null,
         ]);
 
         $this->unsetRelation('items');
@@ -1015,7 +1074,7 @@ class Subscription extends Model
             'prorate' => $this->prorateBehavior() === 'create_prorations',
         ]);
 
-        $this->markAsCancelled();
+        $this->markAsCanceled();
 
         return $this;
     }
@@ -1032,18 +1091,19 @@ class Subscription extends Model
             'prorate' => $this->prorateBehavior() === 'create_prorations',
         ]);
 
-        $this->markAsCancelled();
+        $this->markAsCanceled();
 
         return $this;
     }
 
     /**
-     * Mark the subscription as cancelled.
+     * Mark the subscription as canceled.
      *
      * @return void
+     *
      * @internal
      */
-    public function markAsCancelled()
+    public function markAsCanceled()
     {
         $this->fill([
             'stripe_status' => StripeSubscription::STATUS_CANCELED,
@@ -1052,7 +1112,21 @@ class Subscription extends Model
     }
 
     /**
-     * Resume the cancelled subscription.
+     * Mark the subscription as canceled.
+     *
+     * @return void
+     *
+     * @deprecated Use markAsCanceled instead.
+     *
+     * @internal
+     */
+    public function markAsCancelled()
+    {
+        $this->markAsCanceled();
+    }
+
+    /**
+     * Resume the canceled subscription.
      *
      * @return $this
      *
@@ -1071,7 +1145,7 @@ class Subscription extends Model
 
         // Finally, we will remove the ending timestamp from the user's record in the
         // local database to indicate that the subscription is active again and is
-        // no longer "cancelled". Then we will save this record in the database.
+        // no longer "canceled". Then we shall save this record in the database.
         $this->fill([
             'stripe_status' => $stripeSubscription->status,
             'ends_at' => null,
@@ -1176,6 +1250,31 @@ class Subscription extends Model
     }
 
     /**
+     * Get a collection of the subscription's invoices.
+     *
+     * @param  bool  $includePending
+     * @param  array  $parameters
+     * @return \Illuminate\Support\Collection|\Laravel\Cashier\Invoice[]
+     */
+    public function invoices($includePending = false, $parameters = [])
+    {
+        return $this->owner->invoices(
+            $includePending, array_merge($parameters, ['subscription' => $this->stripe_id])
+        );
+    }
+
+    /**
+     * Get an array of the subscription's invoices, including pending invoices.
+     *
+     * @param  array  $parameters
+     * @return \Illuminate\Support\Collection|\Laravel\Cashier\Invoice[]
+     */
+    public function invoicesIncludingPending(array $parameters = [])
+    {
+        return $this->invoices(true, $parameters);
+    }
+
+    /**
      * Sync the tax rates of the user to the subscription.
      *
      * @return void
@@ -1232,6 +1331,46 @@ class Subscription extends Model
                 ? new Payment($invoice->payment_intent)
                 : null;
         }
+    }
+
+    /**
+     * The discount that applies to the subscription, if applicable.
+     *
+     * @return \Laravel\Cashier\Discount|null
+     */
+    public function discount()
+    {
+        $subscription = $this->asStripeSubscription(['discount.promotion_code']);
+
+        return $subscription->discount
+            ? new Discount($subscription->discount)
+            : null;
+    }
+
+    /**
+     * Apply a coupon to the subscription.
+     *
+     * @param  string  $coupon
+     * @return void
+     */
+    public function applyCoupon($coupon)
+    {
+        $this->updateStripeSubscription([
+            'coupon' => $coupon,
+        ]);
+    }
+
+    /**
+     * Apply a promotion code to the subscription.
+     *
+     * @param  string  $promotionCodeId
+     * @return void
+     */
+    public function applyPromotionCode($promotionCodeId)
+    {
+        $this->updateStripeSubscription([
+            'promotion_code' => $promotionCodeId,
+        ]);
     }
 
     /**

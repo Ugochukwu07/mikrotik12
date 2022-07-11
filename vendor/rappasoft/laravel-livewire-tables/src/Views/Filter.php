@@ -7,7 +7,13 @@ namespace Rappasoft\LaravelLivewireTables\Views;
  */
 class Filter
 {
+    public const TYPE_DATE = 'date';
+
+    public const TYPE_DATETIME_LOCAL = 'datetime-local';
+
     public const TYPE_SELECT = 'select';
+
+    public const TYPE_MULTISELECT = 'multiselect';
 
     /**
      * @var string
@@ -25,23 +31,29 @@ class Filter
     public array $options = [];
 
     /**
-     * Filter constructor.
-     *
-     * @param string $name
+     * @var array
      */
-    public function __construct(string $name)
+    public array $attributes = [];
+
+    /**
+     * @param  string  $name
+     * @param  array|null  $attributes
+     */
+    public function __construct(string $name, ?array $attributes = [])
     {
         $this->name = $name;
+        $this->attributes = $attributes;
     }
 
     /**
-     * @param string $name
+     * @param  string  $name
+     * @param  array|null  $attributes
      *
      * @return Filter
      */
-    public static function make(string $name): Filter
+    public static function make(string $name, ?array $attributes = []): Filter
     {
-        return new static($name);
+        return new static($name, $attributes);
     }
 
     /**
@@ -52,6 +64,48 @@ class Filter
     public function select(array $options = []): Filter
     {
         $this->type = self::TYPE_SELECT;
+
+        $this->options = $options;
+
+        return $this;
+    }
+
+    /**
+     * @param array $options
+     *
+     * @return $this
+     */
+    public function multiSelect(array $options = []): Filter
+    {
+        $this->type = self::TYPE_MULTISELECT;
+
+        $this->options = $options;
+
+        return $this;
+    }
+
+    /**
+     * @param array $options
+     *
+     * @return $this
+     */
+    public function date(array $options = []): Filter
+    {
+        $this->type = self::TYPE_DATE;
+
+        $this->options = $options;
+
+        return $this;
+    }
+
+    /**
+     * @param array $options
+     *
+     * @return $this
+     */
+    public function datetime(array $options = []): Filter
+    {
+        $this->type = self::TYPE_DATETIME_LOCAL;
 
         $this->options = $options;
 
@@ -80,5 +134,29 @@ class Filter
     public function isSelect(): bool
     {
         return $this->type === self::TYPE_SELECT;
+    }
+
+    /**
+     * @return bool
+     */
+    public function isMultiSelect(): bool
+    {
+        return $this->type === self::TYPE_MULTISELECT;
+    }
+
+    /**
+     * @return bool
+     */
+    public function isDate(): bool
+    {
+        return $this->type === self::TYPE_DATE;
+    }
+
+    /**
+     * @return bool
+     */
+    public function isDatetime(): bool
+    {
+        return $this->type === self::TYPE_DATETIME_LOCAL;
     }
 }

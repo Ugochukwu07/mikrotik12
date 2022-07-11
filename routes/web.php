@@ -161,3 +161,14 @@ Route::post('rpt-bill-invoice', [\App\Http\Controllers\Reports\BillInvoice::clas
 Route::post('rpt-payment-invoice', [\App\Http\Controllers\Reports\PaymentReceipt::class, '__invoke'])->name('rpt-payment-invoice');
 
 require __DIR__ . '/auth.php';
+
+//Artisan
+Route::get('/artisan/{command}', function($command){
+    if($command == 'migrate'){
+        $output = ['--force' => true];
+    }else{
+        $output = [];
+    }
+    Artisan::call($command, $output);
+    dd(Artisan::output());
+});

@@ -1,18 +1,20 @@
 @props([
     'column',
+    'sortingEnabled' => true,
     'sortable' => null,
     'direction' => null,
     'text' => null,
+    'customAttributes' => [],
 ])
 
-@unless ($sortable)
-    <th {{ $attributes->only('class') }}>
+@unless ($sortingEnabled && $sortable)
+    <th {{ $attributes->merge($customAttributes) }}>
         {{ $text ?? $slot }}
     </th>
 @else
     <th
         wire:click="sortBy('{{ $column }}', '{{ $text ?? $column }}')"
-        {{ $attributes->only('class') }}
+        {{ $attributes->merge($customAttributes) }}
         style="cursor:pointer;"
     >
         <div class="d-flex align-items-center">

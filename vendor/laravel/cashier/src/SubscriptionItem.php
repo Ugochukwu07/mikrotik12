@@ -112,13 +112,15 @@ class SubscriptionItem extends Model
         ]);
 
         $this->fill([
-            'quantity' => $quantity,
+            'quantity' => $stripeSubscriptionItem->quantity,
         ])->save();
 
         if ($this->subscription->hasSinglePrice()) {
+            $stripeSubscription = $this->subscription->asStripeSubscription();
+
             $this->subscription->fill([
-                'stripe_status' => $stripeSubscriptionItem->subscription->status,
-                'quantity' => $quantity,
+                'stripe_status' => $stripeSubscription->status,
+                'quantity' => $stripeSubscriptionItem->quantity,
             ])->save();
         }
 
@@ -142,13 +144,17 @@ class SubscriptionItem extends Model
     {
         $this->subscription->guardAgainstIncomplete();
 
-        $stripeSubscriptionItem = $this->updateStripeSubscriptionItem(array_merge([
-            'price' => $price,
-            'quantity' => $this->quantity,
-            'payment_behavior' => $this->paymentBehavior(),
-            'proration_behavior' => $this->prorateBehavior(),
-            'tax_rates' => $this->subscription->getPriceTaxRatesForPayload($price),
-        ], $options));
+        $stripeSubscriptionItem = $this->updateStripeSubscriptionItem(array_merge(
+            array_filter([
+                'price' => $price,
+                'quantity' => $this->quantity,
+                'payment_behavior' => $this->paymentBehavior(),
+                'proration_behavior' => $this->prorateBehavior(),
+                'tax_rates' => $this->subscription->getPriceTaxRatesForPayload($price),
+            ], function ($value) {
+                return ! is_null($value);
+            }),
+        $options));
 
         $this->fill([
             'stripe_product' => $stripeSubscriptionItem->price->product,

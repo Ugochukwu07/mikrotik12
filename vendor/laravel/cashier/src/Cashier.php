@@ -7,6 +7,7 @@ use Money\Currency;
 use Money\Formatter\IntlMoneyFormatter;
 use Money\Money;
 use NumberFormatter;
+use Stripe\BaseStripeClient;
 use Stripe\Customer as StripeCustomer;
 use Stripe\StripeClient;
 
@@ -17,7 +18,7 @@ class Cashier
      *
      * @var string
      */
-    const VERSION = '13.4.4';
+    const VERSION = '13.12.0';
 
     /**
      * The Stripe API version.
@@ -25,6 +26,13 @@ class Cashier
      * @var string
      */
     const STRIPE_VERSION = '2020-08-27';
+
+    /**
+     * The base URL for the Stripe API.
+     *
+     * @var string
+     */
+    public static $apiBaseUrl = BaseStripeClient::DEFAULT_API_BASE;
 
     /**
      * The custom currency formatter.
@@ -106,6 +114,7 @@ class Cashier
         return new StripeClient(array_merge([
             'api_key' => $options['api_key'] ?? config('cashier.secret'),
             'stripe_version' => static::STRIPE_VERSION,
+            'api_base' => static::$apiBaseUrl,
         ], $options));
     }
 
@@ -126,12 +135,13 @@ class Cashier
      * @param  int  $amount
      * @param  string|null  $currency
      * @param  string|null  $locale
+     * @param  array  $options
      * @return string
      */
-    public static function formatAmount($amount, $currency = null, $locale = null)
+    public static function formatAmount($amount, $currency = null, $locale = null, array $options = [])
     {
         if (static::$formatCurrencyUsing) {
-            return call_user_func(static::$formatCurrencyUsing, $amount, $currency);
+            return call_user_func(static::$formatCurrencyUsing, $amount, $currency, $locale, $options);
         }
 
         $money = new Money($amount, new Currency(strtoupper($currency ?? config('cashier.currency'))));
@@ -139,6 +149,11 @@ class Cashier
         $locale = $locale ?? config('cashier.currency_locale');
 
         $numberFormatter = new NumberFormatter($locale, NumberFormatter::CURRENCY);
+
+        if (isset($options['min_fraction_digits'])) {
+            $numberFormatter->setAttribute(NumberFormatter::MIN_FRACTION_DIGITS, $options['min_fraction_digits']);
+        }
+
         $moneyFormatter = new IntlMoneyFormatter($numberFormatter, new ISOCurrencies());
 
         return $moneyFormatter->format($money);

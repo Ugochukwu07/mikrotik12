@@ -4,29 +4,44 @@ namespace Rappasoft\LaravelLivewireTables;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
-use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Collection;
 use Livewire\Component;
+use Rappasoft\LaravelLivewireTables\Traits\ComponentHelpers;
 use Rappasoft\LaravelLivewireTables\Traits\WithBulkActions;
+use Rappasoft\LaravelLivewireTables\Traits\WithColumnSelect;
 use Rappasoft\LaravelLivewireTables\Traits\WithCustomPagination;
 use Rappasoft\LaravelLivewireTables\Traits\WithFilters;
+use Rappasoft\LaravelLivewireTables\Traits\WithFooter;
+use Rappasoft\LaravelLivewireTables\Traits\WithHeader;
 use Rappasoft\LaravelLivewireTables\Traits\WithPerPagePagination;
+use Rappasoft\LaravelLivewireTables\Traits\WithReordering;
 use Rappasoft\LaravelLivewireTables\Traits\WithSearch;
 use Rappasoft\LaravelLivewireTables\Traits\WithSorting;
 
 /**
- * Class TableComponent.
+ * Class DataTableComponent
  *
- * @property LengthAwarePaginator|Collection|null $rows
+ * @package Rappasoft\LaravelLivewireTables
  */
 abstract class DataTableComponent extends Component
 {
+    use ComponentHelpers;
     use WithBulkActions;
+    use WithColumnSelect;
     use WithCustomPagination;
     use WithFilters;
+    use WithFooter;
+    use WithHeader;
     use WithPerPagePagination;
+    use WithReordering;
     use WithSearch;
     use WithSorting;
+
+    /**
+     * Dump the filters array for debugging at the top of the datatable
+     *
+     * @var bool
+     */
+    public bool $dumpFilters = false;
 
     /**
      * The default pagination theme.
@@ -57,15 +72,14 @@ abstract class DataTableComponent extends Component
      *
      * @var string
      */
-    public string $emptyMessage = 'No items found. Try narrowing your search.';
+    public string $emptyMessage = 'No items found. Try to broaden your search.';
 
     /**
-     * Name of the page parameter for pagination
-     * Good to change the default if you have more than one datatable on a page.
+     * Whether or not to display a responsive table
      *
-     * @var string
+     * @var bool
      */
-    protected string $pageName = 'page';
+    public bool $responsive = true;
 
     /**
      * Unique name to use for this table if you want the 'per page' options to be remembered on a per table basis.
@@ -76,6 +90,14 @@ abstract class DataTableComponent extends Component
      * @var string
      */
     protected string $tableName = 'table';
+
+    /**
+     * Name of the page parameter for pagination
+     * Good to change the default if you have more than one datatable on a page.
+     *
+     * @var string
+     */
+    protected string $pageName = 'page';
 
     /**
      * @var \null[][]
@@ -167,7 +189,7 @@ abstract class DataTableComponent extends Component
         $this->resetSearch();
         $this->resetSorts();
         $this->resetBulk();
-        $this->resetPage();
+        $this->resetPage($this->pageName());
     }
 
     /**
@@ -203,20 +225,7 @@ abstract class DataTableComponent extends Component
                 'customFilters' => $this->filters(),
                 'rows' => $this->rows,
                 'modalsView' => $this->modalsView(),
+                'bulkActions' => $this->bulkActions,
             ]);
-    }
-
-    /**
-     * Get a column object by its field
-     *
-     * @param  string  $column
-     *
-     * @return mixed
-     */
-    protected function getColumn(string $column)
-    {
-        return collect($this->columns())
-            ->where('column', $column)
-            ->first();
     }
 }

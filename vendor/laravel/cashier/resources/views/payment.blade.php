@@ -51,11 +51,11 @@
 
                 <div v-else-if="paymentIntent.status === 'canceled'">
                     <h2 class="text-xl mb-4 text-gray-600">
-                        Payment Cancelled
+                        Payment Canceled
                     </h2>
 
                     <p class="mb-6">
-                        This payment was cancelled.
+                        This payment was canceled.
                     </p>
                 </div>
 
@@ -301,7 +301,10 @@
                     if (this.paymentMethod.type === 'card') {
                         if (this.paymentIntent.status === 'requires_payment_method') {
                             data.payment_method.card = this.paymentElement;
-                        } else if (this.paymentIntent.status === 'requires_action') {
+                        } else if (
+                            this.paymentIntent.status === 'requires_action' ||
+                            this.paymentIntent.status === 'requires_confirmation'
+                        ) {
                             data.payment_method = this.paymentIntent.payment_method.id;
                         }
 

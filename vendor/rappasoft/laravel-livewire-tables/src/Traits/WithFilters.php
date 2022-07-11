@@ -2,8 +2,10 @@
 
 namespace Rappasoft\LaravelLivewireTables\Traits;
 
+use DateTime;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Facades\Schema;
 use Rappasoft\LaravelLivewireTables\Utilities\ColumnUtilities;
 use Rappasoft\LaravelLivewireTables\Views\Column;
 use Rappasoft\LaravelLivewireTables\Views\Filter;
@@ -13,6 +15,12 @@ use Rappasoft\LaravelLivewireTables\Views\Filter;
  */
 trait WithFilters
 {
+
+    /**
+     * @var bool
+     */
+    public bool $filtersEnabled = true;
+
     /**
      * Filter values
      *
@@ -55,6 +63,10 @@ trait WithFilters
      */
     public function mountWithFilters(): void
     {
+        if (! $this->filtersEnabled) {
+            return;
+        }
+
         $this->checkFilters();
     }
 
@@ -68,6 +80,8 @@ trait WithFilters
         $this->reset('filters');
 
         $this->filters['search'] = $search;
+
+        $this->checkFilters();
     }
 
     /**
@@ -84,7 +98,7 @@ trait WithFilters
         $this->checkFilters();
 
         // Reset the page when filters are changed
-        $this->resetPage();
+        $this->resetPage($this->pageName());
     }
 
     /**
@@ -102,10 +116,19 @@ trait WithFilters
      */
     public function checkFilters(): void
     {
-        foreach ($this->filters() as $filter => $_default) {
-            if (! isset($this->filters[$filter]) || $this->filters[$filter] === '') {
-                $this->filters[$filter] = null;
+        foreach ($this->filters() as $key => $filter) {
+            if (isset($this->filters[$key]) && filled($this->filters[$key])) {
+                continue;
             }
+
+            // If the filter is multiselect, we'll initialize it as an array.
+            if ($filter->isMultiSelect()) {
+                $this->filters[$key] = [];
+
+                continue;
+            }
+
+            $this->filters[$key] = null;
         }
     }
 
@@ -149,8 +172,54 @@ trait WithFilters
                 }
             }
 
+            // Handle 'multiselect' filters
+            if ($filterDefinitions[$filterName]->isMultiSelect() && is_array($filterValue)) {
+                foreach ($filterValue as $selectedValue) {
+                    if (! in_array($selectedValue, $this->getFilterOptions($filterName))) {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+
+            if ($filterDefinitions[$filterName]->isDate()) {
+                // array_sum trick is a terse way of ensuring that PHP
+                // did not do "month shifting"
+                // (e.g. consider that January 32 is February 1)
+                $dt = DateTime::createFromFormat("Y-m-d", $filterValue);
+
+                return $dt !== false && ! array_sum($dt::getLastErrors());
+            }
+
+            if ($filterDefinitions[$filterName]->isDatetime()) {
+                // array_sum trick is a terse way of ensuring that PHP
+                // did not do "month shifting"
+                // (e.g. consider that January 32 is February 1)
+                $dt = DateTime::createFromFormat("Y-m-d\TH:i", $filterValue);
+
+                return $dt !== false && ! array_sum($dt::getLastErrors());
+            }
+
             return false;
         })->toArray();
+    }
+
+    public function selectAllFilters($filterKey): void
+    {
+        $filter = $this->filters()[$filterKey];
+
+        if (! $filter->isMultiSelect()) {
+            return;
+        }
+
+        if (count($this->filters[$filterKey]) === count($filter->options())) {
+            $this->removeFilter($filterKey);
+
+            return;
+        }
+
+        $this->filters[$filterKey] = array_keys($filter->options());
     }
 
     /**
@@ -189,7 +258,11 @@ trait WithFilters
                 return $this->hasIntegerKeys($filter) ? (int)$this->filters[$filter] : trim($this->filters[$filter]);
             }
 
-            return trim($this->filters[$filter]);
+            if (is_string($this->filters[$filter])) {
+                return trim($this->filters[$filter]);
+            }
+
+            return $this->filters[$filter];
         }
 
         return null;
@@ -201,7 +274,7 @@ trait WithFilters
     public function getFilters(): array
     {
         return collect($this->filters)
-            ->reject(fn ($value) => $value === null || $value === '')
+            ->reject(fn ($value) => blank($value))
             ->toArray();
     }
 
@@ -222,9 +295,23 @@ trait WithFilters
      */
     public function removeFilter($filter): void
     {
-        if (isset($this->filters[$filter])) {
-            $this->filters[$filter] = null;
+        if (! isset($this->filters[$filter])) {
+            return;
         }
+
+        if ($filter === 'search') {
+            $this->filters['search'] = null;
+
+            return;
+        }
+
+        if ($this->filters()[$filter]->isMultiSelect()) {
+            $this->filters[$filter] = [];
+
+            return;
+        }
+
+        $this->filters[$filter] = null;
     }
 
     /**
@@ -296,7 +383,7 @@ trait WithFilters
 
                         // TODO: Skip Aggregates
                         if (! $hasRelation) {
-                            $whereColumn = $query->getModel()->getTable() . '.' . $whereColumn;
+                            $whereColumn = Schema::hasColumn($query->getModel()->getTable(), $whereColumn) ? $query->getModel()->getTable() . '.' . $whereColumn : $whereColumn;
                         }
 
                         // We can use a simple where clause

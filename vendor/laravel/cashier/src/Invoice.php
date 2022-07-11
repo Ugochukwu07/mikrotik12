@@ -3,13 +3,12 @@
 namespace Laravel\Cashier;
 
 use Carbon\Carbon;
-use Dompdf\Dompdf;
-use Dompdf\Options;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Contracts\Support\Jsonable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\View;
 use JsonSerializable;
+use Laravel\Cashier\Contracts\InvoiceRenderer;
 use Laravel\Cashier\Exceptions\InvalidInvoice;
 use Stripe\Customer as StripeCustomer;
 use Stripe\Invoice as StripeInvoice;
@@ -61,15 +60,23 @@ class Invoice implements Arrayable, Jsonable, JsonSerializable
     protected $refreshed = false;
 
     /**
+     * The data that will be sent when the invoice is refreshed.
+     *
+     * @var array
+     */
+    protected $refreshData = [];
+
+    /**
      * Create a new invoice instance.
      *
      * @param  \Illuminate\Database\Eloquent\Model  $owner
      * @param  \Stripe\Invoice  $invoice
+     * @param  array  $refreshData
      * @return void
      *
      * @throws \Laravel\Cashier\Exceptions\InvalidInvoice
      */
-    public function __construct($owner, StripeInvoice $invoice)
+    public function __construct($owner, StripeInvoice $invoice, array $refreshData = [])
     {
         if ($owner->stripe_id !== $invoice->customer) {
             throw InvalidInvoice::invalidOwner($invoice, $owner);
@@ -77,6 +84,7 @@ class Invoice implements Arrayable, Jsonable, JsonSerializable
 
         $this->owner = $owner;
         $this->invoice = $invoice;
+        $this->refreshData = $refreshData;
     }
 
     /**
@@ -208,7 +216,7 @@ class Invoice implements Arrayable, Jsonable, JsonSerializable
     public function discountFor(Discount $discount)
     {
         if (! is_null($discountAmount = $this->rawDiscountFor($discount))) {
-            return $this->formatAmount($discountAmount->amount);
+            return $this->formatAmount($discountAmount);
         }
     }
 
@@ -220,14 +228,15 @@ class Invoice implements Arrayable, Jsonable, JsonSerializable
      */
     public function rawDiscountFor(Discount $discount)
     {
-        return Collection::make($this->invoice->total_discount_amounts)
+        return optional(Collection::make($this->invoice->total_discount_amounts)
             ->first(function ($discountAmount) use ($discount) {
                 if (is_string($discountAmount->discount)) {
                     return $discountAmount->discount === $discount->id;
                 } else {
                     return $discountAmount->discount->id === $discount->id;
                 }
-            });
+            }))
+            ->amount;
     }
 
     /**
@@ -263,7 +272,7 @@ class Invoice implements Arrayable, Jsonable, JsonSerializable
      */
     public function tax()
     {
-        return $this->formatAmount($this->invoice->tax);
+        return $this->formatAmount($this->invoice->tax ?? 0);
     }
 
     /**
@@ -385,28 +394,24 @@ class Invoice implements Arrayable, Jsonable, JsonSerializable
             return;
         }
 
+        $expand = [
+            'account_tax_ids',
+            'discounts',
+            'lines.data.tax_amounts.tax_rate',
+            'total_discount_amounts.discount',
+            'total_tax_amounts.tax_rate',
+        ];
+
         if ($this->invoice->id) {
-            $this->invoice = Cashier::stripe()->invoices->retrieve($this->invoice->id, [
-                'expand' => [
-                    'account_tax_ids',
-                    'discounts',
-                    'lines.data.tax_amounts.tax_rate',
-                    'total_discount_amounts.discount',
-                    'total_tax_amounts.tax_rate',
-                ],
+            $this->invoice = $this->owner->stripe()->invoices->retrieve($this->invoice->id, [
+                'expand' => $expand,
             ]);
         } else {
             // If no invoice ID is present then assume this is the customer's upcoming invoice...
-            $this->invoice = Cashier::stripe()->invoices->upcoming([
+            $this->invoice = $this->owner->stripe()->invoices->upcoming(array_merge($this->refreshData, [
                 'customer' => $this->owner->stripe_id,
-                'expand' => [
-                    'account_tax_ids',
-                    'discounts',
-                    'lines.data.tax_amounts.tax_rate',
-                    'total_discount_amounts.discount',
-                    'total_tax_amounts.tax_rate',
-                ],
-            ]);
+                'expand' => $expand,
+            ]));
         }
 
         $this->refreshed = true;
@@ -606,19 +611,13 @@ class Invoice implements Arrayable, Jsonable, JsonSerializable
      */
     public function pdf(array $data)
     {
-        if (! defined('DOMPDF_ENABLE_AUTOLOAD')) {
-            define('DOMPDF_ENABLE_AUTOLOAD', false);
+        $options = config('cashier.invoices.options', []);
+
+        if ($paper = config('cashier.paper')) {
+            $options['paper'] = $paper;
         }
 
-        $options = new Options;
-        $options->setChroot(base_path());
-
-        $dompdf = new Dompdf($options);
-        $dompdf->setPaper(config('cashier.paper', 'letter'));
-        $dompdf->loadHtml($this->view($data)->render());
-        $dompdf->render();
-
-        return $dompdf->output();
+        return app(InvoiceRenderer::class)->render($this, $data, $options);
     }
 
     /**
@@ -698,6 +697,7 @@ class Invoice implements Arrayable, Jsonable, JsonSerializable
      *
      * @return array
      */
+    #[\ReturnTypeWillChange]
     public function jsonSerialize()
     {
         return $this->toArray();

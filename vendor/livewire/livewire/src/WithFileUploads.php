@@ -51,9 +51,16 @@ trait WithFileUploads
         $this->emit('upload:errored', $name)->self();
 
         if (is_null($errorsInJson)) {
-            $genericValidationMessage = trans('validation.uploaded', ['attribute' => $name]);
-            if ($genericValidationMessage === 'validation.uploaded') $genericValidationMessage = "The {$name} failed to upload.";
-            throw ValidationException::withMessages([$name => $genericValidationMessage]);
+            // Handle any translations/custom names
+            $translator = app()->make('translator');
+
+            $attribute = $translator->get("validation.attributes.{$name}");
+            if ($attribute === "validation.attributes.{$name}") $attribute = $name;
+
+            $message = trans('validation.uploaded', ['attribute' => $attribute]);
+            if ($message === 'validation.uploaded') $message = "The {$name} failed to upload.";
+
+            throw ValidationException::withMessages([$name => $message]);
         }
 
         $errorsInJson = $isMultiple
@@ -80,12 +87,12 @@ trait WithFileUploads
 
                 return true;
             })));
-        } elseif ($uploads instanceof TemporaryUploadedFile) {
+        } elseif ($uploads instanceof TemporaryUploadedFile && $uploads->getFilename() === $tmpFilename) {
             $uploads->delete();
 
             $this->emit('upload:removed', $name, $tmpFilename)->self();
 
-            if ($uploads->getFilename() === $tmpFilename) $this->syncInput($name, null);
+            $this->syncInput($name, null);
         }
     }
 
