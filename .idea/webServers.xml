@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="7d49e8c6-1496-45ae-9655-92623fa91155" name="45.77.138.149">
+        <fileTransfer rootFolder="/var/www/betternet3/betternet3" accessType="SFTP" host="45.77.138.149" port="22" sshConfigId="47d885fa-e8f4-4789-a53c-5c496cf708b8" sshConfig="root@45.77.138.149:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
